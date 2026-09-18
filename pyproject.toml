@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "check_esphome_sensor"
+version = "0.1.0"
+description = "Nagios/Icinga plugin for ESPHome devices (native API or web_server v3 HTTP API)"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Thomas Wagner", email = "wagner-thomas@gmx.at" },
+]
+requires-python = ">=3.8"
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Monitoring",
+]
+dependencies = [
+    "requests>=2.20",
+]
+
+[project.optional-dependencies]
+api = [
+    "aioesphomeapi>=20",
+]
+
+[project.scripts]
+check_esphome_sensor = "check_esphome_sensor:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
