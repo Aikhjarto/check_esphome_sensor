@@ -35,7 +35,12 @@ Four kinds of checks (--check):
           of offset.
   binary  Evaluate a boolean expression (and/or/not/parentheses) over
           one or more binary_sensor entities named in the expression,
-          e.g. --binary-expr "door_open and not away".
+          e.g. --binary-expr "door_open and not away". Entity names
+          that aren't valid Python identifiers (e.g. containing spaces,
+          as ESPHome's HTTP web_server friendly names often do) must be
+          quoted string literals instead, e.g.
+          --binary-expr '"Flap closed" and not "Flap opened"'. There is
+          no native XOR; write it as (A and not B) or (not A and B).
   text    Match a text_sensor's value against a Python regular
           expression (--regex), e.g. to check a status/version string.
 
@@ -538,7 +543,16 @@ def parse_bool_expr(expr):
 
 
 def extract_names(tree):
-    return sorted({node.id for node in ast.walk(tree) if isinstance(node, ast.Name)})
+    """Entity names referenced in the expression, either as bare Python
+    identifiers (e.g. flap_closed) or as quoted string literals for names
+    that aren't valid identifiers (e.g. "Flap closed", with a space)."""
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            names.add(node.id)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            names.add(node.value)
+    return sorted(names)
 
 
 def eval_bool_expr(tree, values):
@@ -555,6 +569,12 @@ def eval_bool_expr(tree, values):
                 raise KeyError(node.id)
             return bool(values[node.id])
         if isinstance(node, ast.Constant):
+            # a quoted string is an entity name (for names that aren't
+            # valid Python identifiers); True/False are literal booleans.
+            if isinstance(node.value, str):
+                if node.value not in values:
+                    raise KeyError(node.value)
+                return bool(values[node.value])
             return bool(node.value)
         die(STATE_UNKNOWN, "Unsupported element in --binary-expr")
 
@@ -633,7 +653,9 @@ def parse_args():
     binary_group = parser.add_argument_group("--check binary")
     binary_group.add_argument(
         "--binary-expr",
-        help="boolean expression over binary_sensor entity ids, e.g. 'door_open and not alarm_armed'",
+        help="boolean expression over binary_sensor entity ids, e.g. 'door_open and not "
+             "alarm_armed'; quote names that aren't valid Python identifiers (e.g. "
+             "containing spaces), e.g. '\"Flap closed\" and not \"Flap opened\"'",
     )
     binary_group.add_argument("--true-state", choices=("ok", "warning", "critical"), default="critical")
     binary_group.add_argument("--false-state", choices=("ok", "warning", "critical"), default="ok")
