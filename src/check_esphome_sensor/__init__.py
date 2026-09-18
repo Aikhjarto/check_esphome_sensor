@@ -493,6 +493,13 @@ def get_reference_time(time_server, timeout):
 
 
 def parse_device_time(value):
+    """A raw epoch (int/float, or a numeric string) is unambiguous. A
+    formatted datetime string, however, is typically local wall-clock time
+    with no UTC offset suffix (e.g. an ESPHome text_sensor template using
+    id(<time_id>).now().strftime(...) under a "Europe/Vienna"-style
+    timezone: config) -- leaving it naive lets datetime.timestamp() assume
+    it is local time in *this host's* timezone, which is correct as long
+    as this plugin runs in the same timezone as the device."""
     if isinstance(value, (int, float)):
         return float(value)
     text = str(value).strip()
@@ -504,8 +511,6 @@ def parse_device_time(value):
         dt = datetime.fromisoformat(text)
     except ValueError:
         die(STATE_UNKNOWN, f"Could not parse time value: {text!r}")
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
     return dt.timestamp()
 
 
