@@ -25,7 +25,7 @@ Supports two transports:
                           configured under the ESPHome "api:" section.
                           Requires the python3-aioesphomeapi module.
 
-Four kinds of checks (--check):
+Five kinds of checks (--check):
   sensor  Compare a numeric sensor/text_sensor value against -w/-c
           thresholds. Unlike most plugins, -c may be smaller than -w:
           whichever of the two is larger decides whether higher or
@@ -43,6 +43,12 @@ Four kinds of checks (--check):
           no native XOR; write it as (A and not B) or (not A and B).
   text    Match a text_sensor's value against a Python regular
           expression (--regex), e.g. to check a status/version string.
+  compare Check that --entity stays above (or below, --must-be) the
+          --compare-entity by a margin: -w and -c are the smallest
+          acceptable margins, e.g. a wall temperature at least 3 degrees
+          above the dew point (--must-be above -w 3 -c 1), or a room at
+          least 2 degrees below the outside temperature for an air
+          conditioning (--must-be below -w 2 -c 0).
 
 Pass --list instead of --check to print the available sensor,
 text_sensor, binary_sensor, date, time and datetime entities (with
@@ -467,6 +473,28 @@ def evaluate_numeric(value, warning, critical, label, uom=""):
     return state, message
 
 
+def evaluate_margin(value, other, must_be, warning, critical, label, other_label, uom=""):
+    """--check compare: value has to be above (or below) other by more than
+    the margins -w and -c; a margin at or below -c is CRITICAL."""
+    margin = value - other if must_be == "above" else other - value
+    if margin <= critical:
+        state = STATE_CRITICAL
+    elif margin <= warning:
+        state = STATE_WARNING
+    else:
+        state = STATE_OK
+    if margin > 0:
+        relation = f"{margin:.6g}{uom} {must_be}"
+    elif margin == 0:
+        relation = f"equal to, not {must_be},"
+    else:
+        relation = f"{-margin:.6g}{uom} {'below' if must_be == 'above' else 'above'}, not {must_be},"
+    message = (f"{label} is {relation} {other_label} ({value:.6g}{uom} vs {other:.6g}{uom}) | "
+               f"'margin'={margin:.6g}{uom};{warning:.6g};{critical:.6g} "
+               f"'{label}'={value:.6g}{uom} '{other_label}'={other:.6g}{uom}")
+    return state, message
+
+
 # ---------------------------------------------------------------------------
 # time-offset check
 # ---------------------------------------------------------------------------
@@ -604,6 +632,8 @@ def parse_args():
             "--binary-expr 'door_open and not alarm_disarmed'\n"
             "  %(prog)s -H esp.local --check text --text-entity firmware_status "
             "--regex '^ok$'\n"
+            "  %(prog)s -H esp.local --check compare --entity wall_temperature "
+            "--compare-entity dew_point --must-be above -w 3 -c 1\n"
             "  %(prog)s -H esp.local --list\n"
         ),
     )
@@ -632,7 +662,8 @@ def parse_args():
              "(with their current value, if received in time) and exit, instead of "
              "running a check",
     )
-    parser.add_argument("--check", choices=("sensor", "time", "binary", "text"), help="type of check to perform")
+    parser.add_argument("--check", choices=("sensor", "time", "binary", "text", "compare"),
+                        help="type of check to perform")
 
     sensor_group = parser.add_argument_group("--check sensor")
     sensor_group.add_argument("--entity", help="sensor/text_sensor entity id (object_id)")
@@ -644,6 +675,15 @@ def parse_args():
         help="unit of measurement for performance data (default: retrieved from the "
              "device -- SensorInfo.unit_of_measurement in --mode api, or parsed out of "
              "the formatted state text in --mode http)",
+    )
+
+    compare_group = parser.add_argument_group("--check compare (also uses --entity, --entity-domain, -w, -c, --uom)")
+    compare_group.add_argument("--compare-entity", help="sensor/text_sensor entity id --entity is compared with")
+    compare_group.add_argument("--compare-entity-domain", choices=("sensor", "text_sensor"), default="sensor")
+    compare_group.add_argument(
+        "--must-be", choices=("above", "below"),
+        help="whether --entity has to stay above or below --compare-entity; -w and -c are the "
+             "smallest acceptable margins, so -w must not be smaller than -c",
     )
 
     time_group = parser.add_argument_group("--check time")
@@ -688,6 +728,13 @@ def parse_args():
     if args.check == "sensor":
         if not args.entity or args.warning is None or args.critical is None:
             parser.error("--check sensor requires --entity, -w and -c")
+    elif args.check == "compare":
+        if not args.entity or not args.compare_entity or not args.must_be or args.warning is None \
+                or args.critical is None:
+            parser.error("--check compare requires --entity, --compare-entity, --must-be, -w and -c")
+        if args.warning < args.critical:
+            parser.error("for --check compare, -w and -c are the smallest acceptable margins, "
+                         "so -w must not be smaller than -c")
     elif args.check == "time":
         if not args.time_entity or args.warning is None or args.critical is None:
             parser.error("--check time requires --time-entity, -w and -c")
@@ -726,6 +773,23 @@ def main():
             die(STATE_UNKNOWN, f"Value of {args.entity} is not numeric: {value!r}")
         uom = args.uom or uoms.get(args.entity) or ""
         state, message = evaluate_numeric(value, args.warning, args.critical, args.entity, uom)
+        die(state, message)
+
+    elif args.check == "compare":
+        wanted = [(args.entity, args.entity_domain), (args.compare_entity, args.compare_entity_domain)]
+        values, uoms = fetch_values(args, list(dict(wanted).items()))
+        numbers = {}
+        for name in (args.entity, args.compare_entity):
+            try:
+                numbers[name] = float(values[name])
+            except (TypeError, ValueError):
+                die(STATE_UNKNOWN, f"Value of {name} is not numeric: {values[name]!r}")
+        uom, other_uom = uoms.get(args.entity), uoms.get(args.compare_entity)
+        if uom and other_uom and uom != other_uom and not args.uom:
+            die(STATE_UNKNOWN, f"{args.entity} is in {uom}, but {args.compare_entity} in {other_uom}")
+        state, message = evaluate_margin(numbers[args.entity], numbers[args.compare_entity], args.must_be,
+                                         args.warning, args.critical, args.entity, args.compare_entity,
+                                         args.uom or uom or other_uom or "")
         die(state, message)
 
     elif args.check == "time":

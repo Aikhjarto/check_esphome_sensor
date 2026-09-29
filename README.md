@@ -14,7 +14,7 @@ HTTP JSON API.
     password (`--api-password`) or Noise PSK encryption key (`--api-key`), as
     configured under the ESPHome `api:` section. Requires the optional
     `aioesphomeapi` dependency (see [Installation](#installation)).
-- **Four kinds of checks** (`--check`)
+- **Five kinds of checks** (`--check`)
   - `sensor`: compare a numeric `sensor`/`text_sensor` value against `-w`/`-c`
     thresholds. Unlike most plugins, `-c` may be smaller than `-w`: whichever
     of the two is larger decides whether higher or lower values count as
@@ -26,6 +26,8 @@ HTTP JSON API.
     expression, e.g. `--binary-expr "door_open and not away"`.
   - `text`: match a `text_sensor`'s value against a Python regular expression
     (`--regex`), e.g. to check a status or version string.
+  - `compare`: check that `--entity` stays above (or below) the
+    `--compare-entity` by a margin, see [below](#comparing-two-sensors).
 - **`--list`**: instead of `--check`, print the available `sensor`,
   `text_sensor`, `binary_sensor`, `date`, `time` and `datetime` entities
   (with their current value, if received in time, and unit of measurement
@@ -109,9 +111,32 @@ check_esphome_sensor -H esp.local --check binary \
 # Regex match against a text_sensor
 check_esphome_sensor -H esp.local --check text --text-entity firmware_status --regex '^ok$'
 
+# The wall has to stay at least 3 degrees above the dew point
+check_esphome_sensor -H esp.local --check compare --entity wall_temperature \
+    --compare-entity dew_point --must-be above -w 3 -c 1
+
 # List all entities you could target with the above
 check_esphome_sensor -H esp.local --list
 ```
+
+### Comparing two sensors
+
+`--check compare` checks that one value stays on one side of another, as
+climate control has to keep it: `--must-be above` requires `--entity` to be
+larger than `--compare-entity`, `--must-be below` smaller. `-w` and `-c` are
+the smallest acceptable margins between the two, in their unit: a margin at
+or below `-w` is WARNING, at or below `-c` CRITICAL. So `-w` must not be
+smaller than `-c`, and a value on the wrong side is CRITICAL whenever `-c` is
+0 or more.
+
+- **Condensation**: a wall has to stay warmer than the dew point of the air:
+  `--entity wall_temperature --compare-entity dew_point --must-be above -w 3 -c 1`
+- **Air conditioning**: the room has to stay cooler than outside:
+  `--entity room_temperature --compare-entity outside_temperature --must-be below -w 2 -c 0`
+
+The performance data holds the margin and both values. `--compare-entity-domain` selects `text_sensor` for the second entity,
+like `--entity-domain` for the first. Sensors with different units, such as
+°C and °F, are UNKNOWN.
 
 ## License
 
