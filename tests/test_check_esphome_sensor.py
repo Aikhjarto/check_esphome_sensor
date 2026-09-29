@@ -123,8 +123,23 @@ class TestCompare(unittest.TestCase):
             + self.compare("wall_temperature", "dew_point", "above", 1, 3),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
             env=dict(os.environ, PYTHONPATH=SRC), timeout=60)
-        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(plugin.STATE_UNKNOWN, result.returncode, result)
         self.assertIn("-w must not be smaller than -c", result.stderr)
+
+    def run_plugin(self, *argv):
+        return subprocess.run(
+            [sys.executable, "-m", "check_esphome_sensor", "-H", "127.0.0.1", "-p", str(self.port)] + list(argv),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
+            env=dict(os.environ, PYTHONPATH=SRC), timeout=60)
+
+    def test_usage_errors_are_unknown(self):
+        # argparse would exit 2, which Nagios reads as CRITICAL
+        for argv in (["-Z"], [], ["--check", "sensor"], ["--check", "nope"], ["-p", "abc", "--list"],
+                     ["--check", "sensor", "--entity", "x", "-w", "abc", "-c", "1"],
+                     ["--check", "text", "--text-entity", "x", "--regex", "("]):
+            result = self.run_plugin(*argv)
+            self.assertEqual(plugin.STATE_UNKNOWN, result.returncode, (argv, result))
+            self.assertIn("check_esphome_sensor: error: ", result.stderr)
 
 
 if __name__ == "__main__":
