@@ -6,6 +6,7 @@ import sys
 import threading
 import unittest
 import urllib.parse
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import check_esphome_sensor as plugin
@@ -44,6 +45,10 @@ class FakeWebServer(BaseHTTPRequestHandler):
             # like ESPHome for a domain the device has no entity of: close without an answer
             self.close_connection = True
             return
+        if domain == "text_sensor" and name == "esp_time":
+            # like a template text_sensor with id(sntp_time).now().strftime(...), in local time
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            return self.reply(200, {"id": "text_sensor-esp_time", "value": now, "state": now})
         if domain == "text_sensor" and name in TEXT_SENSORS:
             return self.reply(200, {"id": f"text_sensor-{name}", "value": TEXT_SENSORS[name],
                                     "state": TEXT_SENSORS[name]})
@@ -135,6 +140,12 @@ class TestCompare(unittest.TestCase):
             [sys.executable, "-m", "check_esphome_sensor", "-H", "127.0.0.1", "-p", str(self.port)] + list(argv),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
             env=dict(os.environ, PYTHONPATH=SRC), timeout=60)
+
+    def test_time(self):
+        # the offset is rounded to tenths of a second, the thresholds have no needless decimals
+        self.expect(plugin.STATE_OK, r"^OK: time offset of esp_time is [0-9]\.?[0-9]?s \| "
+                                     r"'time offset of esp_time'=[0-9]\.?[0-9]?s;10;20;;$",
+                    "--check", "time", "--time-entity", "esp_time", "-w", "10", "-c", "20")
 
     def test_unknown_entity(self):
         self.expect(plugin.STATE_UNKNOWN, r"^UNKNOWN: 127.0.0.1 has no sensor 'nothing', see --list$",
