@@ -167,8 +167,17 @@ def fetch_http(args, wanted):
         url = f"http://{args.host}:{args.port}/{domain}/{urllib.parse.quote(entity_id, safe='')}"
         try:
             resp = requests.get(url, auth=auth, timeout=args.timeout)
+        except requests.exceptions.ConnectionError as exc:
+            if "RemoteDisconnected" in repr(exc):
+                # the web_server closes the connection without an answer for
+                # a domain the device has no entity of at all
+                die(STATE_UNKNOWN, f"{args.host} closed the connection without an answer for {domain}/{entity_id}; "
+                                   f"ESPHome does so when the device has no {domain} entities at all, see --list")
+            die(STATE_UNKNOWN, f"HTTP request to {url} failed: {exc}")
         except requests.exceptions.RequestException as exc:
             die(STATE_UNKNOWN, f"HTTP request to {url} failed: {exc}")
+        if resp.status_code == 404:
+            die(STATE_UNKNOWN, f"{args.host} has no {domain} {entity_id!r}, see --list")
         if resp.status_code == 401:
             die(STATE_UNKNOWN, f"HTTP authentication failed for {url}")
         if resp.status_code != 200:

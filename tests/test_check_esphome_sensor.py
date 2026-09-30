@@ -40,6 +40,10 @@ class FakeWebServer(BaseHTTPRequestHandler):
         if domain == "sensor" and name in SENSORS:
             value, state = SENSORS[name]
             return self.reply(200, {"id": f"sensor-{name}", "value": value, "state": state})
+        if domain == "datetime":
+            # like ESPHome for a domain the device has no entity of: close without an answer
+            self.close_connection = True
+            return
         if domain == "text_sensor" and name in TEXT_SENSORS:
             return self.reply(200, {"id": f"text_sensor-{name}", "value": TEXT_SENSORS[name],
                                     "state": TEXT_SENSORS[name]})
@@ -131,6 +135,17 @@ class TestCompare(unittest.TestCase):
             [sys.executable, "-m", "check_esphome_sensor", "-H", "127.0.0.1", "-p", str(self.port)] + list(argv),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
             env=dict(os.environ, PYTHONPATH=SRC), timeout=60)
+
+    def test_unknown_entity(self):
+        self.expect(plugin.STATE_UNKNOWN, r"^UNKNOWN: 127.0.0.1 has no sensor 'nothing', see --list$",
+                    "--check", "sensor", "--entity", "nothing", "-w", "1", "-c", "2")
+
+    def test_domain_without_entities(self):
+        self.expect(plugin.STATE_UNKNOWN, r"^UNKNOWN: 127.0.0.1 closed the connection without an answer for "
+                                          r"datetime/clock; ESPHome does so when the device has no datetime "
+                                          r"entities at all, see --list$",
+                    "--check", "time", "--time-entity", "clock", "--time-entity-domain", "datetime",
+                    "-w", "10", "-c", "20")
 
     def test_usage_errors_are_unknown(self):
         # argparse would exit 2, which Nagios reads as CRITICAL
