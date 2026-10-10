@@ -1,0 +1,59 @@
+# bash completion for check_esphome_sensor                   -*- shell-script -*-
+
+_check_esphome_sensor()
+{
+    local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD-1]}
+    # --option=value: bash splits at the =
+    if [[ $cur == = ]]; then
+        cur=
+    elif [[ $prev == = && $COMP_CWORD -ge 2 ]]; then
+        prev=${COMP_WORDS[COMP_CWORD-2]}
+    fi
+    COMPREPLY=()
+
+    case $prev in
+        -H | --host | --time-server)
+            mapfile -t COMPREPLY < <(compgen -A hostname -- "$cur")
+            return
+            ;;
+        --mode)
+            mapfile -t COMPREPLY < <(compgen -W 'http api' -- "$cur")
+            return
+            ;;
+        --check)
+            mapfile -t COMPREPLY < <(compgen -W 'sensor time binary text compare' -- "$cur")
+            return
+            ;;
+        --entity-domain | --compare-entity-domain)
+            mapfile -t COMPREPLY < <(compgen -W 'sensor text_sensor' -- "$cur")
+            return
+            ;;
+        --time-entity-domain)
+            mapfile -t COMPREPLY < <(compgen -W 'sensor text_sensor datetime' -- "$cur")
+            return
+            ;;
+        --must-be)
+            mapfile -t COMPREPLY < <(compgen -W 'above below' -- "$cur")
+            return
+            ;;
+        --true-state | --false-state | --match-state | --no-match-state)
+            mapfile -t COMPREPLY < <(compgen -W 'ok warning critical' -- "$cur")
+            return
+            ;;
+        -p | --port | -t | --timeout | --api-password | --api-key | -u | --username | \
+            -P | --password | --entity | -w | --warning | -c | --critical | --uom | \
+            --compare-entity | --time-entity | --binary-expr | --text-entity | --regex)
+            return
+            ;;
+    esac
+
+    # no positional arguments: offer the options
+    mapfile -t COMPREPLY < <(compgen -W '-h --help -H --host -p --port --mode
+        -t --timeout --list --check --api-password --api-key -u --username
+        -P --password --entity --entity-domain -w --warning -c --critical --uom
+        --compare-entity --compare-entity-domain --must-be --time-entity
+        --time-entity-domain --time-server --binary-expr --true-state
+        --false-state --text-entity --regex -i --ignore-case --match-state
+        --no-match-state' -- "$cur")
+}
+complete -F _check_esphome_sensor check_esphome_sensor

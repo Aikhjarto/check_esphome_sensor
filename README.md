@@ -138,6 +138,16 @@ The performance data holds the margin and both values. `--compare-entity-domain`
 like `--entity-domain` for the first. Sensors with different units, such as
 °C and °F, are UNKNOWN.
 
+## Bash completion
+
+`completions/check_esphome_sensor` completes the options and their values,
+also when the plugin is called by its full path. The packages install it;
+otherwise copy it to bash-completion's directory:
+
+```sh
+install -D -m 0644 completions/check_esphome_sensor /usr/share/bash-completion/completions/check_esphome_sensor
+```
+
 ## License
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).
